@@ -1,9 +1,8 @@
-import Calendar from "react-calendar";
-import "react-calendar/dist/Calendar.css";
+import React, { useState, useEffect, useRef } from "react";
+import { Calendar, momentLocalizer, View } from "react-big-calendar";
+import moment from "moment";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Event } from "../../Firebase/eventsService";
-import { useState, useEffect } from "react";
-
-type Value = Date | null;
 
 interface Props {
   events: Event[];
@@ -11,66 +10,172 @@ interface Props {
   userId: string;
 }
 
-export const CalendarView = ({ events, onSelectDate, userId }: Props) => {
-  const [value, setValue] = useState<Value>(null);
+const localizer = momentLocalizer(moment);
+
+type CustomToolbarProps = {
+  label: string;
+  onNavigate: (action: "PREV" | "NEXT" | "TODAY") => void;
+  onView: (view: View) => void;
+  views: View[];
+  view: View;
+};
+
+const CustomEvent = ({ event }: { event: any }) => {
+  return (
+    <div
+      className="overflow-hidden whitespace-nowrap text-ellipsis
+                 px-2 py-1 rounded-md shadow cursor-pointer
+                 hover:bg-opacity-90 transition select-none"
+      title={event.title}
+      style={{ fontWeight: 600, fontSize: "0.85rem" }}
+    >
+      {event.title}
+    </div>
+  );
+};
+
+export const CalendarView: React.FC<Props> = ({ events, onSelectDate, userId }) => {
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [currentView, setCurrentView] = useState<View>("month");
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setValue(null);
+    setSelectedDate(null);
     onSelectDate(null);
+    setCurrentDate(new Date());
+    setCurrentView("month");
   }, [userId, onSelectDate]);
 
-  const handleChange = (newValue: unknown, _event: React.MouseEvent<HTMLButtonElement>) => {
-    const value = newValue as Value;
-    if (value instanceof Date) {
-      setValue(value);
-      onSelectDate(value);
-    } else {
-      setValue(null);
-      onSelectDate(null);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        calendarRef.current &&
+        !calendarRef.current.contains(event.target as Node)
+      ) {
+        setSelectedDate(null);
+        onSelectDate(null);
+      }
     }
+    document.addEventListener("click", handleClickOutside);
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [onSelectDate]);
+
+  const rbcEvents = events.map((ev) => ({
+    title: ev.title || "Подія",
+    start: new Date(ev.datetime),
+    end: new Date(ev.datetime),
+    allDay: true,
+    resource: ev,
+  }));
+
+  const handleSelectSlot = ({ start }: { start: Date }) => {
+    setSelectedDate(start);
+    onSelectDate(start);
+    setCurrentDate(start);
+  };
+
+  const handleSelectEvent = (event: { start: Date }) => {
+    setSelectedDate(event.start);
+    onSelectDate(event.start);
+    setCurrentDate(event.start);
+  };
+
+  const handleNavigate = (date: Date) => {
+    setCurrentDate(date);
   };
 
   return (
-    <div className="max-w-md mx-auto my-4">
+    <div
+      ref={calendarRef}
+      className="max-w-6xl mx-auto my-8 p-6 bg-white rounded-xl shadow-lg"
+    >
       <Calendar
-        selectRange={false}
-        onChange={handleChange}
-        value={value}
-        tileClassName={({ date, view }) => {
-          if (
-            view === "month" &&
-            events.some(
-              (ev) =>
-                new Date(ev.datetime).toDateString() === date.toDateString()
-            )
-          ) {
-            return "bg-blue-400 text-white font-bold rounded-full";
+        localizer={localizer}
+        events={rbcEvents}
+        startAccessor="start"
+        endAccessor="end"
+        selectable
+        onSelectSlot={handleSelectSlot}
+        onSelectEvent={handleSelectEvent}
+        onNavigate={handleNavigate}
+        date={currentDate}
+        view={currentView}
+        onView={setCurrentView}
+        views={["month", "week", "day"]}
+        style={{ height: 650 }}
+        dayPropGetter={(date: Date) => {
+          if (selectedDate && date.toDateString() === selectedDate.toDateString()) {
+            return {
+              className:
+                "bg-indigo-300 rounded-lg border border-indigo-500 shadow-md",
+            };
           }
-          return null;
+          return {};
         }}
-        tileContent={({ date, view }) => {
-          if (
-            view === "month" &&
-            events.some(
-              (ev) =>
-                new Date(ev.datetime).toDateString() === date.toDateString()
-            )
-          ) {
-            return (
-              <div className="flex justify-center mt-1">
-                <svg
-                  className="text-blue-600"
-                  height="6"
-                  width="6"
-                  viewBox="0 0 10 10"
-                  fill="currentColor"
+        eventPropGetter={(event) => {
+          let backgroundColor = "#22c55e";
+          if (event.resource.importance === "critical") backgroundColor = "#dc2626";
+          else if (event.resource.importance === "important") backgroundColor = "#ca8a04";
+
+          return {
+            style: {
+              backgroundColor,
+              color: "white",
+              borderRadius: 6,
+              padding: "2px 6px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+              border: "none",
+            },
+          };
+        }}
+        components={{
+          event: CustomEvent,
+          toolbar: (toolbar: CustomToolbarProps) => (
+            <div className="flex items-center justify-between mb-4 px-4">
+              <div className="flex items-center space-x-3">
+                <button
+                  className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition"
+                  onClick={() => toolbar.onNavigate("PREV")}
                 >
-                  <circle cx="5" cy="5" r="5" />
-                </svg>
+                  ←
+                </button>
+                <button
+                  className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition"
+                  onClick={() => toolbar.onNavigate("TODAY")}
+                >
+                  Сьогодні
+                </button>
+                <button
+                  className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition"
+                  onClick={() => toolbar.onNavigate("NEXT")}
+                >
+                  →
+                </button>
               </div>
-            );
-          }
-          return null;
+              <h2 className="text-xl font-semibold text-gray-900">
+                {toolbar.label}
+              </h2>
+              <div className="flex items-center space-x-2">
+                {toolbar.views.map((view) => (
+                  <button
+                    key={view}
+                    className={`px-3 py-1 rounded-md font-medium transition ${
+                      toolbar.view === view
+                        ? "bg-indigo-600 text-white"
+                        : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                    }`}
+                    onClick={() => toolbar.onView(view)}
+                  >
+                    {view.charAt(0).toUpperCase() + view.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ),
         }}
       />
     </div>

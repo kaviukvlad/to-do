@@ -8,10 +8,6 @@ import EventsPage from "../pages/EventsPage";
 export const AppRouter = () => {
   const { status } = useContext(AuthContext);
 
-  if (status === "checking") {
-    return <p>Перевірка автентифікації...</p>;
-  }
-
   if (status === "no-authenticated") {
     return (
       <Routes>
